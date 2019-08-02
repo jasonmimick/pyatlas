@@ -1,3 +1,4 @@
+import logging
 import pprint
 import os
 import requests
@@ -6,7 +7,12 @@ import json
 from datetime import *; 
 from dateutil.relativedelta import *
 from enum import Enum
+import types
 from requests.auth import HTTPDigestAuth
+
+import kubernetes
+
+logger = logging.getLogger(__name__)
 
 class ApiVersion(Enum):
   V1 = '/api/atlas/v1.0'
@@ -20,6 +26,7 @@ class AtlasClient(object):
 
   def __init__(self,username=os.environ.get("ATLAS_PUBLIC_KEY")
                    ,api_key=os.environ.get("ATLAS_PRIVATE_KEY")
+                   ,project_id=os.environ.get("ATLAS_PROJECT")
                    ,base_url="https://cloud.mongodb.com"):
     """ Constructor - pass in username/apikey or public/private key pair for 
         MongoDB Atlas. Override `base_url` for use with an instance of 
@@ -27,6 +34,9 @@ class AtlasClient(object):
     """
     self.username = username
     self.api_key = api_key
+    self.project_id = project_id
+    print(f'...... init project_id={project_id} {self.project_id}')
+    self.__project_id = project_id  # cache original if default from OS
     self.digest = HTTPDigestAuth(self.username,self.api_key)
 
     if isinstance(base_url,AtlasEnvironment):
@@ -59,16 +69,74 @@ class AtlasClient(object):
     """
     return self.get('{}/orgs/{}/users'.format(ApiVersion.V1.value,org_id))
 
+  ## Database Users ##
+  def database_users(self,project_id=''):
+    """ GET /api/atlas/v1.0/groups/{GROUP-ID}/databaseUsers
+    """
+    project_id = project_id if project_id is not '' else self.__project_id
+    return self.get(f'{ApiVersion.V1.value}/groups/{project_id}/databaseUsers')
+
+  def create_programatic_apikey(self
+                               ,description='pyatlas api key'
+                               ,roles='GROUP_OWNER',project_id=''):
+    """ Create a new programatic apikey against the current
+        of given group with the given or default (GROUP_OWNER)
+        permissions.
+    """
+    project_id = project_id if project_id is not '' else self.__project_id
+    if isinstance(roles, types.StringTypes):
+      roles = roles.split(',')
+    data = { 'desc' : description, 'roles' : roles }
+    return self.post(f'{ApiVersion.V1.value}/groups/{project_id}/apiKeys',body=data)
+    
+  def create_database_user(self,db_user={},project_id=''):
+    """ Create a new db user
+    """
+    project_id = project_id if project_id is not '' else self.__project_id
+    logger.info(f'create_database_user {db_user} {project_id}')
+    res = self.post(f'{ApiVersion.V1.value}/groups/{project_id}/databaseUsers',body=db_user)
+
+  def bind(self,cluster_name,ip_address='',bind_details={},project_id=''):
+    """ Returns a MongoDB connection string along with 
+        a programat
+        x1. Need programatic api key to add ip to whitelist
+        2. Add ip to whitelist
+        3. Generate DB user x with prog api key
+        4. get cluster info
+        5. assemble connection string and return
+    """
+    project_id = project_id if project_id is not '' else self.__project_id
+    if ip_address == '':
+      headers = { 'User-Agent': 'curl/7.61.0'}   # spoof for simple response
+      ip = requests.get('http://ifconfig.co', headers)
+      ip_address = ip.text.rstrip()
+      logger.info(f'bind: looked up ip address: {ip_address}')
+    #key = self.create_programatic_apikey(description=description,project_id=project_id)
+    db_user = { 'username' : 'foo'
+                ,'password' : 'changeme'
+                ,'databaseName' : 'admin'
+                ,'roles' : [ {'databaseName' : 'admin', 'roleName' : 'dbAdminAnyDatabase'} ] 
+    }
+    user = self.create_database_user(db_user,project_id=project_id) 
+    cluster = self.get_cluster(cluster_name)
+    cs = cluster['mongoURIWithOptions'].split('/',1)
+    #conn_str = f'{cs[0]//{key['publicKey']}:{key['privateKey']}@{cs[1]}'
+    return conn_str
+
   ## Cluster APIs ##
        
   def clusters(self,project_id=os.environ.get("ATLAS_PROJECT")):
     """ Return list of clusters for this organization.
     """
+    project_id = project_id if project_id is not '' else self.__project_id
     return self.get('{}/groups/{}/clusters'.format(ApiVersion.V1.value,project_id))
 
-  def cluster(self,cluster_name,project_id=os.environ.get("ATLAS_PROJECT")):
+  def get_cluster(self,cluster_name,project_id=''):
     """ Return cluster by name for this organization.
     """
+    print( f'>>>>>>{self.project_id}')
+    if project_id == '':
+      project_id = self.project_id
     return self.get('{}/groups/{}/clusters/{}'.format(ApiVersion.V1.value,project_id,cluster_name))
 
   def cluster_ready(self,cluster_name,project_id=os.environ.get("ATLAS_PROJECT")):
@@ -102,7 +170,7 @@ class AtlasClient(object):
   def pending_invoice(self,org_id):
     """ Return the pending invoice for this organization id.
     """
-    return self.get('{}/orgs/{}/invoices/pending'.format(ApiVersion.V1.value,org_id,invoice_id))
+    return self.get('{}/orgs/{}/invoices/pending'.format(ApiVersion.V1.value,org_id))
 
   def invoice_items(self,org_id,query={}):
     """ Return the line items posted for the

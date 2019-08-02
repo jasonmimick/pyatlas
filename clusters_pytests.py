@@ -2,15 +2,21 @@ import random,string
 import pytest 
 import pprint
 import json
+import os
 from pyatlas import AtlasClient
 
 @pytest.fixture
 def atlas_client():
-  #public_key = "IJVSKWSE"
   public_key = "TVWZPCPO"
-  #private_key = "8586582e-1519-4f8d-a0f3-645c15005c48"
   private_key = "67fcfc59-9e11-42a7-aaae-980a144bc119"
-  return AtlasClient(public_key, private_key)
+  return AtlasClient(public_key, private_key, project_id='5d27b2e89ccf646a9e4d5b82')
+
+@pytest.fixture
+def atlas_client_from_env():
+  os.environ["ATLAS_PUBLIC_KEY"] = "TVWZPCPO"
+  os.environ["ATLAS_PRIVATE_KEY"] = "67fcfc59-9e11-42a7-aaae-980a144bc119"
+  os.environ["ATLAS_PROJECT"] ='5d27b2e89ccf646a9e4d5b82'
+  return AtlasClient()
 
 @pytest.fixture
 def basic_cluster_details():
@@ -28,23 +34,25 @@ def basic_cluster_details():
   }
 
 def xtest_basic_create_cluster(atlas_client, basic_cluster_details):
-  project_id = '5d27b2e89ccf646a9e4d5b82'
-  response = atlas_client.create_cluster(project_id,basic_cluster_details)
+  response = atlas_client.create_cluster(basic_cluster_details)
   print(response)
   assert response is not None
 
-def test_basic_get_cluster(atlas_client, basic_cluster_details):
-  project_id = '5d27b2e89ccf646a9e4d5b82'
+def xtest_basic_create_cluster(atlas_client_from_env, basic_cluster_details):
+  response = atlas_client.create_cluster(basic_cluster_details)
+  print(response)
+  assert response is not None
+
+def test_basic_get_cluster(atlas_client_from_env, basic_cluster_details):
   cluster_name = basic_cluster_details['name']
-  response = atlas_client.clusters(project_id,cluster_name)
+  response = atlas_client_from_env.get_cluster(cluster_name)
   print(response)
   pprint.pprint(response)
   assert response is not None
 
 def xtest_basic_delete_cluster(atlas_client, basic_cluster_details):
-  project_id = '5d27b2e89ccf646a9e4d5b82'
   cluster_name = basic_cluster_details['name']
-  response = atlas_client.delete_cluster(project_id,cluster_name)
+  response = atlas_client.delete_cluster(cluster_name)
   print(response)
   assert response is not None
   
