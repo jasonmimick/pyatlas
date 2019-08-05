@@ -41,7 +41,13 @@ def usage_daysback(org_id,days_back=1):
   date = f'{date}T00:00:00Z'
   query = { 'endDate' : date }
   print(f'query={query}')
-  items = atlas_client.invoice_items(org_id,query)
+  try:
+    items = atlas_client.invoice_items(org_id,query)
+  except Exception as error:
+    print(f'error={error}')
+    #if isinstance(error, requests.exceptions.HTTPError):
+    #  print('okok')
+  
   assert items is not None
   total = AtlasClient.summarize_invoice(items)
   assert total is not None
@@ -54,8 +60,10 @@ def usage_daysback(org_id,days_back=1):
   fixed = fix_result(results)
   return jsonify(fixed)
 
-@app.route('/')
-def index():
-  return 'Hello'
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    return 'You want path: %s' % path
+
 
 
