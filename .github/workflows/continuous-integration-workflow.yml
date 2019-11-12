@@ -10,6 +10,10 @@ jobs:
       - name: Say hi
         run: echo 'Hello github actions'
       - name: pytest
+        env: # Or as an environment variable
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.S MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets. MONGODB_ATLAS_PRIVATE_KEY }}
+          MONGODB_ATLAS_ORG_ID : ${{ secrets. MONGODB_ATLAS_ORG_ID }}
         working-directory: pyatlas 
         run: pytest pyatlas/tests
       - name: Echo the greeting's time

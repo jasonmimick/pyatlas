@@ -4,9 +4,7 @@ from pyatlas import AtlasClient
 
 @pytest.fixture
 def atlas_client():
-  public_key = "IJVSKWSE"
-  private_key = "8586582e-1519-4f8d-a0f3-645c15005c48"
-  return AtlasClient(public_key, private_key,project_id='5d36251779358e2b6002872d')
+  return AtlasClient()
 
 def test_get_groups(atlas_client):
   group = atlas_client.groups()

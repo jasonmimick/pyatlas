@@ -42,7 +42,7 @@ class AtlasEnvironment(Enum):
 class Env(object):
   PUBLIC_KEY = "MONGODB_ATLAS_PUBLIC_KEY"
   PRIVATE_KEY = "MONGODB_ATLAS_PRIVATE_KEY"
-  ORG_ID = "MONGODB_ATLAS_ORG_ID"
+  ORG_ID = "MONGODB_ATLAS_self.org_id"
 
   @staticmethod
   def get(key):
@@ -50,9 +50,9 @@ class Env(object):
 
 class AtlasClient(object):
 
-  org_id = ''
   def __init__(self,public_key=Env.get(Env.PUBLIC_KEY)
                    ,private_key=Env.get(Env.PRIVATE_KEY)
+                   ,org_id=Env.get(Env.ORG_ID)
                    ,base_url="https://cloud.mongodb.com"):
     """ Constructor - pass in username/apikey or public/private key pair for 
         MongoDB Atlas. Override `base_url` for use with an instance of 
@@ -60,7 +60,7 @@ class AtlasClient(object):
     """
     self.public_key = public_key 
     self.private_key = private_key
-    
+    self.org_id = org_id    
 
     if isinstance(base_url,AtlasEnvironment):
       self.base_url = base_url.value
@@ -97,9 +97,11 @@ class AtlasClient(object):
     #return self.get('{}/groups'.format(ApiVersion.A1.value))
     return self.get('{}/groups'.format(ApiVersion.CM1.value))
 
-  def users(self,org_id):
+  def users(self,org_id=None):
     """ Return list of users for this organization.
     """
+    if org_id is None:
+      org_id = self.org_id
     return self.get('{}/orgs/{}/users'.format(ApiVersion.A1.value,org_id))
 
   ## Database Users ##
@@ -111,7 +113,9 @@ class AtlasClient(object):
 
   def create_project(self
                      ,name
-                     ,org_id=''):
+                     ,org_id=None):
+    if org_id is None:
+      org_id = self.org_id
     project_data = { "name" : name } 
     if org_id:
       project_data["orgId"] = org_id 
@@ -225,20 +229,26 @@ class AtlasClient(object):
     return response
 
   ## Fidicuary APIs ##
-  def invoices(self,org_id,invoice_id=''):
+  def invoices(self,org_id=None,invoice_id=''):
     """ Return all invoices or a particular invoice.
     """
+    if org_id is None:
+      org_id = self.org_id
     return self.get('{}/orgs/{}/invoices/{}'.format(ApiVersion.A1.value,org_id,invoice_id))
 
-  def pending_invoice(self,org_id):
+  def pending_invoice(self,org_id=None):
     """ Return the pending invoice for this organization id.
     """
+    if org_id is None:
+      org_id = self.org_id
     return self.get('{}/orgs/{}/invoices/pending'.format(ApiVersion.A1.value,org_id))
 
-  def invoice_items(self,org_id,query={}):
+  def invoice_items(self,org_id=None,query={}):
     """ Return the line items posted for the
     given _date from the appropriate invoice.
     """
+    if org_id is None:
+      org_id = self.org_id
     query_end_date = datetime.strptime(query['endDate'],'%Y-%m-%dT%H:%M:%SZ')
     # Given a 'query_end_date' to find the invoice containing the
     # line items for that date we need to find the invoice which 
