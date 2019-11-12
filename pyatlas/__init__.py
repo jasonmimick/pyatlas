@@ -42,7 +42,7 @@ class AtlasEnvironment(Enum):
 class Env(object):
   PUBLIC_KEY = "MONGODB_ATLAS_PUBLIC_KEY"
   PRIVATE_KEY = "MONGODB_ATLAS_PRIVATE_KEY"
-  ORG_ID = "MONGODB_ATLAS_self.org_id"
+  ORG_ID = "MONGODB_ATLAS_ORG_ID"
 
   @staticmethod
   def get(key):

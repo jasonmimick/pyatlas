@@ -11,10 +11,10 @@ jobs:
         run: echo 'Hello github actions'
       - name: pytest
         env: # Or as an environment variable
-          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.S MONGODB_ATLAS_PUBLIC_KEY }}
-          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets. MONGODB_ATLAS_PRIVATE_KEY }}
-          MONGODB_ATLAS_ORG_ID : ${{ secrets. MONGODB_ATLAS_ORG_ID }}
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}
+          MONGODB_ATLAS_ORG_ID : ${{ secrets.MONGODB_ATLAS_ORG_ID }}
         working-directory: pyatlas 
-        run: pytest pyatlas/tests
+        run: pytest pyatlas/tests/basic_pytests.py
       - name: Echo the greeting's time
         run: echo 'The time was ${{ steps.hello.outputs.time }}.'
