@@ -13,6 +13,21 @@ from requests.auth import HTTPDigestAuth
 
 import kubernetes
 
+# These two lines enable debugging at httplib level (requests->urllib3->http.client)
+# You will see the REQUEST, including HEADERS and DATA, and RESPONSE with HEADERS but without DATA.
+# The only thing missing will be the response.body which is not logged.
+try:
+    import http.client as http_client
+except ImportError:
+    # Python 2
+    import httplib as http_client
+http_client.HTTPConnection.debuglevel = 1
+
+# You must initialize logging, otherwise you'll not see debug output.
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+requests_log = logging.getLogger("requests.packages.urllib3")
+requests_log.setLevel(logging.DEBUG)
+requests_log.propagate = True
 logger = logging.getLogger(__name__)
 
 class ApiVersion(Enum):
@@ -24,36 +39,46 @@ class AtlasEnvironment(Enum):
   PRODUCTION = 'https://cloud.mongodb.com'
   STAGING = 'https://cloud-qa.mongodb.com'
 
+class Env(object):
+  PUBLIC_KEY = "MONGODB_ATLAS_PUBLIC_KEY"
+  PRIVATE_KEY = "MONGODB_ATLAS_PRIVATE_KEY"
+  ORG_ID = "MONGODB_ATLAS_ORG_ID"
+
+  @staticmethod
+  def get(key):
+    return os.getenv(key)
+
 class AtlasClient(object):
 
   org_id = ''
-  def __init__(self,username=os.environ.get("ATLAS_PUBLIC_KEY")
-                   ,api_key=os.environ.get("ATLAS_PRIVATE_KEY")
+  def __init__(self,public_key=Env.get(Env.PUBLIC_KEY)
+                   ,private_key=Env.get(Env.PRIVATE_KEY)
                    ,base_url="https://cloud.mongodb.com"):
     """ Constructor - pass in username/apikey or public/private key pair for 
         MongoDB Atlas. Override `base_url` for use with an instance of 
         MongoDB Ops Manager.
     """
-    self.username = username
-    self.api_key = api_key
+    self.public_key = public_key 
+    self.private_key = private_key
     
-    self.digest = HTTPDigestAuth(self.username,self.api_key)
 
     if isinstance(base_url,AtlasEnvironment):
       self.base_url = base_url.value
     else:
       self.base_url = base_url
     self.api_root = '{}{}'.format(base_url,ApiVersion.A1.value)
-    self.default_parmeters = {}
-    self.default_parmeters['envelope'] = True
 
-  def sync_atlas_config():
-    """ Load the current users environment
-        atlas config.
-    """
-       
-    self.verbose = False
- 
+  def pyatlas_config(self,verbose=True):
+    config = {
+      Env.PUBLIC_KEY : self.public_key,
+      Env.PRIVATE_KEY : self.private_key,
+    }
+    print(f'pyatlas_config={config}')
+    return config
+
+  def get_digest(self):
+    return HTTPDigestAuth(self.public_key,self.private_key)
+
 
   # API
   def organizations(self):
@@ -69,7 +94,8 @@ class AtlasClient(object):
   def groups(self):
     """ Return list of groups for this public key.
     """
-    return self.get('{}/groups'.format(ApiVersion.A1.value))
+    #return self.get('{}/groups'.format(ApiVersion.A1.value))
+    return self.get('{}/groups'.format(ApiVersion.CM1.value))
 
   def users(self,org_id):
     """ Return list of users for this organization.
@@ -86,7 +112,9 @@ class AtlasClient(object):
   def create_project(self
                      ,name
                      ,org_id=''):
-    project_data = { "name" : name, "orgId" : org_id }
+    project_data = { "name" : name } 
+    if org_id:
+      project_data["orgId"] = org_id 
     pprint.pprint(project_data)
     project = self.post(f'{ApiVersion.CM1.value}/groups'
                         ,body=project_data)
@@ -96,16 +124,12 @@ class AtlasClient(object):
     self.org_id = project['content']['orgId']
     return project
 
-  def delete_project(self
-                     ,name): 
-    group_id = self.lookup_group_id(name=name)
-    project = self.delete(f'{ApiVersion.CM1.value}/groups/{group_id}'
-                        ,body=project_data)
-    pprint.pprint(project)
-    print(f'>>>>> {project.keys()}')
-    self.project_id = project['content']['id']
-    self.org_id = project['content']['orgId']
-    return project
+  def delete_project(self,name): 
+    project = self.project_by_name(project_name=name)
+    group_id = project['content']['id']
+    logger.info(f'>>>>>>> delete_project name={name} group_id={group_id}')
+    response = self.delete(f'{ApiVersion.CM1.value}/groups/{group_id}')
+    return response 
 
   def create_apikey(self
                     ,project_name
@@ -121,7 +145,8 @@ class AtlasClient(object):
     data = { 'desc' : description, 'roles' : roles }
     pprint.pprint(data)
     
-     
+    p = self.project_by_name(project_name=project_name)
+    project_id = p['content']['id'] 
     target = f'{ApiVersion.CM1.value}/groups/{project_id}/apiKeys'
     print( f'target={target}' )
     print( f'data={data}' )
@@ -279,7 +304,8 @@ class AtlasClient(object):
   def project_by_name(self,project_name=''):
     """ Return MongoDB Atlas Project/Group metadata for given project name.
     """
-    return self.get('{}/groups/byName/{}'.format(ApiVersion.A1.value,project_name))
+    logger.debug(f'project_by_name project_name={project_name}')
+    return self.get('{}/groups/byName/{}'.format(ApiVersion.CM1.value,project_name))
 
   def envelope(self,parameters={}):
     parameters['envelope'] = True
@@ -291,19 +317,20 @@ class AtlasClient(object):
   def get(self, path, parameters={}):
     parameters = self.envelope(parameters)
     url = '{}{}'.format(self.base_url,path)
-    if self.verbose:
-      print('AtlasClient get:url={}'.format(url))
-    response= requests.get(url,params=parameters,auth=self.digest)
+    logger.info('AtlasClient get:url={}'.format(url))
+    response= requests.get(url,params=parameters,auth=self.get_digest())
+    logger.info(f' response.json()={response.json()}')
     response.raise_for_status()
     return response.json()
 
   def post(self, path, parameters={}, body={}):
     headers = { "Content-Type" : "application/json" }
     url = '{}{}'.format(self.base_url,path)
+    self.pyatlas_config()
     print(f'url={url} path={path} base_url={self.base_url}')
     pprint.pprint(body)
     response = requests.post(url
-                             ,auth=self.digest
+                             ,auth=self.get_digest()
                              ,params=self.envelope(parameters)
                              ,data=json.dumps(body)
                              ,headers=headers)
@@ -314,9 +341,10 @@ class AtlasClient(object):
   def delete(self, path, parameters={}):
     headers = { "Content-Type" : "application/json" }
     url = '{}{}'.format(self.base_url,path)
+    self.pyatlas_config()
     print(f'url={url} path={path} base_url={self.base_url}')
     response = requests.delete(url
-                             ,auth=self.digest
+                             ,auth=self.get_digest()
                              ,params=self.envelope(parameters)
                              ,headers=headers)
     pprint.pprint(response.json())
