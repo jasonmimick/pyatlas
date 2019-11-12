@@ -1,0 +1,16 @@
+name: Run tests for pytlas
+# This workflow is triggered on pushes to the repository.
+on: [push]
+
+jobs:
+  build:
+    name: pytest
+    runs-on: qnib/pytest
+    steps:
+      - name: Say hi
+        run: echo 'Hello github actions'
+      - name: pytest
+        working-directory: pyatlas 
+        run: pytest pyatlas/tests
+      - name: Echo the greeting's time
+        run: echo 'The time was ${{ steps.hello.outputs.time }}.'
