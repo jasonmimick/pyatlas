@@ -143,7 +143,7 @@ class AtlasClient(object):
         with the given or default (GROUP_OWNER)
         permissions.
     """
-    
+    print('pyatlas - create_apikey') 
     roles = roles.split(',')
     pprint.pprint(roles)
     data = { 'desc' : description, 'roles' : roles }
@@ -154,7 +154,8 @@ class AtlasClient(object):
     target = f'{ApiVersion.CM1.value}/groups/{project_id}/apiKeys'
     print( f'target={target}' )
     print( f'data={data}' )
-    return self.post(target, body=data)
+    response = self.post(target, body=data)
+    return response
     
   def create_database_user(self,db_user={},project_id=''):
     """ Create a new db user

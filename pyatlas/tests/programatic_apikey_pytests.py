@@ -3,17 +3,16 @@ import pprint
 import string
 import random
 import os
-from .. pyatlas import AtlasClient
-from . testutils import *
+from pyatlas import AtlasClient
+#from testutils import *
 
 @pytest.fixture
 def public_key():
-  return "PLUJXFDN"
-  private_key = "f81c4372-0143-4f72-a4f6-d502b6643c10"
+  return "NGKMIHEO"
 
 @pytest.fixture
 def private_key():
-  return "f81c4372-0143-4f72-a4f6-d502b6643c10"
+  return "66bcc7de-b0de-4d8d-9695-ef97637c6895"
 
 @pytest.fixture
 def client(public_key, private_key):
@@ -25,7 +24,7 @@ def project_name():
 
 @pytest.fixture
 def org_id():
-  return "599eeea79f78f769464d41a1"
+  return "5d371dda553855dd17d4fcf9"
 
 @pytest.fixture
 def project(client, project_name, org_id):
@@ -33,14 +32,24 @@ def project(client, project_name, org_id):
   project = client.create_project( project_name, org_id=org_id )
   return project
 
-def test_create_apikey(project):
+def test_create_apikey(client,project):
   project_name=project['content']['name']
   print(f'project_name={project_name}')
   desc = f"test key for project {project_name}"
   key = client.create_apikey(project_name=project_name
                              ,description=desc)
+  print('-------------------- start generated apikey --------------------')
   print(key)
+  print('-------------------- end generated apikey --------------------')
   assert key is not None 
 
+## utils
 
-#test_create_programatic_apikey( client() )
+def random_token(N=5):
+  token=''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(N))
+  print(f'token={token}')
+  return token
+
+def new_test_project_name():
+  project_name=f'pyatlas-test-{random_token()}'
+  return project_name
