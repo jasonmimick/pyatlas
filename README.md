@@ -3,6 +3,10 @@ Simple lightweight python client for the MongoDB Atlas API.
 
 Getting Started.
 
+```
+git clone <this>
+cd pyatlas
+pip3 install pyatlas
 ```bash
 $export MONGODB_ATLAS_PUBLIC_KEY="xxx"
 $export MONGODB_ATLAS_PRIVATE_KEY="xxx"
