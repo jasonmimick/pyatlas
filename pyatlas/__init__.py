@@ -10,12 +10,12 @@ from enum import Enum
 import string
 import random
 from requests.auth import HTTPDigestAuth
-
+import urllib.request
 import kubernetes
 
 # These two lines enable debugging at httplib level (requests->urllib3->http.client)
 # You will see the REQUEST, including HEADERS and DATA, and RESPONSE with HEADERS but without DATA.
-# The only thing missing will be the response.body which is not logged.
+# The only thing missing will be the response.body which != logged.
 try:
     import http.client as http_client
 except ImportError:
@@ -40,9 +40,10 @@ class AtlasEnvironment(Enum):
   STAGING = 'https://cloud-qa.mongodb.com'
 
 class Env(object):
-  PUBLIC_KEY = "MONGODB_ATLAS_PUBLIC_KEY"
-  PRIVATE_KEY = "MONGODB_ATLAS_PRIVATE_KEY"
-  ORG_ID = "MONGODB_ATLAS_ORG_ID"
+  PUBLIC_KEY = "MCLI_PUBLIC_API_KEY"
+  PRIVATE_KEY = "MCLI_PRIVATE_API_KEY"
+  ORG_ID = "MCLI_ORG_ID"
+  PROJECT_ID = "MCLI_PROJECT_ID"
 
   @staticmethod
   def get(key):
@@ -53,6 +54,7 @@ class AtlasClient(object):
   def __init__(self,public_key=Env.get(Env.PUBLIC_KEY)
                    ,private_key=Env.get(Env.PRIVATE_KEY)
                    ,org_id=Env.get(Env.ORG_ID)
+                   ,project_id=Env.get(Env.PROJECT_ID)
                    ,base_url="https://cloud.mongodb.com"):
     """ Constructor - pass in username/apikey or public/private key pair for 
         MongoDB Atlas. Override `base_url` for use with an instance of 
@@ -61,6 +63,7 @@ class AtlasClient(object):
     self.public_key = public_key 
     self.private_key = private_key
     self.org_id = org_id    
+    self.project_id = project_id    
 
     if isinstance(base_url,AtlasEnvironment):
       self.base_url = base_url.value
@@ -72,6 +75,8 @@ class AtlasClient(object):
     config = {
       Env.PUBLIC_KEY : self.public_key,
       Env.PRIVATE_KEY : self.private_key,
+      Env.ORG_ID : self.org_id,
+      Env.PROJECT_ID : self.project_id
     }
     print(f'pyatlas_config={config}')
     return config
@@ -108,7 +113,7 @@ class AtlasClient(object):
   def database_users(self,project_id=''):
     """ GET /api/atlas/v1.0/groups/{GROUP-ID}/databaseUsers
     """
-    project_id = project_id if project_id is not '' else self.__project_id
+    project_id = project_id if project_id != '' else self.__project_id
     return self.get(f'{ApiVersion.A1.value}/groups/{project_id}/databaseUsers')
 
   def create_project(self
@@ -135,10 +140,27 @@ class AtlasClient(object):
     response = self.delete(f'{ApiVersion.CM1.value}/groups/{group_id}')
     return response 
 
-  def create_apikey(self
-                    ,project_name
-                    ,description='pyatlas? because.'
-                    ,roles='GROUP_OWNER'):
+  ## TODO - need to expose this in the AutomaticKeyMachine api --
+  def new_project_apikey(self,ip_address=None,project_id=None):
+    if ip_address is None:
+      external_ip = urllib.request.urlopen('https://ident.me').read().decode('utf8')
+      print(f'external_ip={external_ip}')
+      ip_address=external_ip
+    if project_id is None:
+      if self.project_id is None:
+        raise "No project_id found. Pass or set when creating client"
+      project_id=self.project_id
+
+    apikey = self.create_project_apikey(project_id=project_id)
+    whitelist = self.add_project_apikey_whitelist(apikey_id=apikey.id
+                                              ,ip_address=ip_address
+                                              ,project_id=project_id)
+    return { 'apikey' : apikey, 'whitelist' : whitelist }
+
+  def create_project_apikey(self
+                    ,project_id
+                    ,description='pyatlas generated project apikey'
+                    ,roles='PROJECT_OWNER'):
     """ Create a new programatic apikey in <project_name>
         with the given or default (GROUP_OWNER)
         permissions.
@@ -149,18 +171,90 @@ class AtlasClient(object):
     data = { 'desc' : description, 'roles' : roles }
     pprint.pprint(data)
     
-    p = self.project_by_name(project_name=project_name)
-    project_id = p['content']['id'] 
     target = f'{ApiVersion.CM1.value}/groups/{project_id}/apiKeys'
     print( f'target={target}' )
     print( f'data={data}' )
     response = self.post(target, body=data)
     return response
     
+  def add_whitelist_atlas_project(self, ip_address=None):
+    if ip_address is None:
+      external_ip = urllib.request.urlopen('https://ident.me').read().decode('utf8')
+      print(f'external_ip={external_ip}')
+      ip_address=external_ip
+    data = [ { 'ipAddress' : ip_address, 'comment' : 'pyatlas generated whitelist entry' } ]
+    pprint.pprint(data)
+    
+    target = f'{ApiVersion.A1.value}/groups/{self.project_id}/whitelist'
+    print( f'target={target}' )
+    print( f'data={data}' )
+    response = self.post(target, body=data)
+    return response
+
+
+
+  def add_project_apikey_whitelist(self
+                               ,apikey_id
+                               ,ip_address
+                               ,project_id):
+    """ Add ip address to whitelist for a given
+        programatic apikey in <project_name>.
+    """
+    print('pyatlas - add_whitelist') 
+    data = [ { "ipAddress" : f"\"{ip_address}\"" } ]
+    pprint.pprint(data)
+    
+    target = f'{ApiVersion.CM1.value}/groups/{project_id}/apiKeys/{apikey_id}/whitelist'
+    print( f'target={target}' )
+    print( f'data={data}' )
+    response = self.post(target, body=data)
+    return response
+
+  def new_org_apikey(self,ip_address):
+    apikey = self.create_org_apikey()
+    whitelist = self.add_org_apikey_whitelist(apikey.id
+                                              ,ip_address)
+    return { 'apikey' : apikey, 'whitelist' : whitelist }
+
+  def create_org_apikey(self
+                    ,description='pyatlas generated org apikey'
+                    ,roles='ORG_GROUP_CREATOR'):
+    """ Create a new programatic apikey in <project_name>
+        with the given or default (GROUP_OWNER)
+        permissions.
+    """
+    print('pyatlas - create_apikey') 
+    roles = roles.split(',')
+    pprint.pprint(roles)
+    data = { 'desc' : description, 'roles' : roles }
+    pprint.pprint(data)
+    
+    target = f'{ApiVersion.CM1.value}/orgs/{self.org_id}/apiKeys'
+    print( f'target={target}' )
+    print( f'data={data}' )
+    response = self.post(target, body=data)
+    return response
+    
+  def add_org_apikey_whitelist(self
+                               ,apikey_id
+                               ,ip_address):
+    """ Add ip address to whitelist for a given
+        programatic apikey in <project_name>.
+    """
+    print('pyatlas - add_whitelist') 
+    data = [ { "ipAddress" : f"\"{ip_address}\"" } ]
+    pprint.pprint(data)
+    
+    target = f'{ApiVersion.CM1.value}/orgs/{self.org_id}/apiKeys/{apikey_id}/whitelist'
+    print( f'target={target}' )
+    print( f'data={data}' )
+    response = self.post(target, body=data)
+    return response
+
   def create_database_user(self,db_user={},project_id=''):
     """ Create a new db user
     """
-    project_id = project_id if project_id is not '' else self.__project_id
+    project_id = project_id if project_id != '' else self.__project_id
     logger.info(f'create_database_user {db_user} {project_id}')
     res = self.post(f'{ApiVersion.A1.value}/groups/{project_id}/databaseUsers',body=db_user)
 
@@ -173,7 +267,7 @@ class AtlasClient(object):
         4. get cluster info
         5. assemble connection string and return
     """
-    project_id = project_id if project_id is not '' else self.__project_id
+    project_id = project_id if project_id != '' else self.__project_id
     if ip_address == '':
       headers = { 'User-Agent': 'curl/7.61.0'}   # spoof for simple response
       ip = requests.get('http://ifconfig.co', headers)
@@ -196,7 +290,7 @@ class AtlasClient(object):
   def clusters(self,project_id=os.environ.get("ATLAS_PROJECT")):
     """ Return list of clusters for this organization.
     """
-    project_id = project_id if project_id is not '' else self.__project_id
+    project_id = project_id if project_id != '' else self.__project_id
     return self.get('{}/groups/{}/clusters'.format(ApiVersion.A1.value,project_id))
 
   def get_cluster(self,cluster_name,project_id=''):
